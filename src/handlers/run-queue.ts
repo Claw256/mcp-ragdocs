@@ -54,8 +54,10 @@ export class RunQueueHandler extends BaseHandler {
       let processedCount = 0;
       let failedCount = 0;
       const failedUrls: string[] = [];
-
-      for (const url of urls) {
+      const batchSize = 5;
+      const urlsToProcess = urls.slice(0, batchSize);
+      
+      for (const url of urlsToProcess) {
         try {
           await this.addDocHandler.handle({ url });
           processedCount++;
@@ -66,12 +68,18 @@ export class RunQueueHandler extends BaseHandler {
         }
       }
 
-      // Remove all processed URLs from the queue file
-      await fs.writeFile(QUEUE_FILE, '');
+      // Remove processed URLs from the queue file
+      const remainingUrls = urls.slice(batchSize);
+      await fs.writeFile(QUEUE_FILE, remainingUrls.join('\n'));
 
-      let resultText = `Queue processing complete.\nProcessed: ${processedCount} URLs\nFailed: ${failedCount} URLs`;
+      let resultText = `Queue processing in progress.\nProcessed: ${processedCount} URLs\nFailed: ${failedCount} URLs`;
       if (failedUrls.length > 0) {
         resultText += `\n\nFailed URLs:\n${failedUrls.join('\n')}`;
+      }
+      if (remainingUrls.length > 0) {
+        resultText += `\n\nRemaining URLs: ${remainingUrls.length}`;
+      } else {
+          resultText += `\n\nQueue is empty.`;
       }
 
       return {

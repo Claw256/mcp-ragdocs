@@ -98,7 +98,7 @@ export class AddDocumentationHandler extends BaseHandler {
     const page = await this.apiClient.browser.newPage();
     
     try {
-      await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+      await page.goto(url, { waitUntil: 'load', timeout: 30000 });
       const content = await page.content();
       const $ = cheerio.load(content);
       

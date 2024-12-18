@@ -56,18 +56,51 @@ export class ApiClient {
       );
     }
 
-    try {
-      const response = await this.openaiClient.embeddings.create({
-        model: 'text-embedding-ada-002',
-        input: text,
-      });
-      return response.data[0].embedding;
-    } catch (error) {
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to generate embeddings: ${error}`
-      );
+    const maxRetries = 3;
+    let retries = 0;
+    let lastError: any;
+
+    while (retries < maxRetries) {
+      try {
+        const response = await Promise.race([
+          this.openaiClient.embeddings.create({
+            model: 'text-embedding-ada-002',
+            input: text,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('OpenAI embeddings request timed out')), 30000)
+          ),
+        ]);
+        if (response instanceof Error) {
+          throw response;
+        }
+        
+        // Type check and assertion to ensure response is not an error
+        if (
+          response &&
+          typeof response === 'object' &&
+          'data' in response &&
+          response.data &&
+          Array.isArray(response.data) &&
+          response.data.length > 0 &&
+          'embedding' in response.data[0] &&
+          Array.isArray(response.data[0].embedding)
+        ) {
+          return (response as any).data[0].embedding;
+        } else {
+          throw new Error('Invalid response from OpenAI embeddings API');
+        }
+      } catch (error) {
+        lastError = error;
+        retries++;
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retrying
+      }
     }
+
+    throw new McpError(
+      ErrorCode.InternalError,
+      `Failed to generate embeddings after ${maxRetries} retries: ${lastError}`
+    );
   }
 
   async initCollection(COLLECTION_NAME: string) {
