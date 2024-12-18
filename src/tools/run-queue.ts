@@ -56,49 +56,45 @@ export class RunQueueTool extends BaseTool {
         };
       }
 
-      let processedCount = 0;
-      let failedCount = 0;
-      const failedUrls: string[] = [];
+      // Read current queue
+      const content = await fs.readFile(QUEUE_FILE, 'utf-8');
+      const urls = content.split('\n').filter(url => url.trim() !== '');
 
-      while (true) {
-        // Read current queue
-        const content = await fs.readFile(QUEUE_FILE, 'utf-8');
-        const urls = content.split('\n').filter(url => url.trim() !== '');
-
-        if (urls.length === 0) {
-          break; // Queue is empty
-        }
-
-        const currentUrl = urls[0]; // Get first URL
-        
-        try {
-          // Process the URL using the handler
-          await this.addDocHandler.handle({ url: currentUrl });
-          processedCount++;
-        } catch (error) {
-          failedCount++;
-          failedUrls.push(currentUrl);
-          console.error(`Failed to process URL ${currentUrl}:`, error);
-        }
-
-        // Remove the processed URL from queue
-        const remainingUrls = urls.slice(1);
-        await fs.writeFile(QUEUE_FILE, remainingUrls.join('\n') + (remainingUrls.length > 0 ? '\n' : ''));
+      if (urls.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Queue is empty',
+            },
+          ],
+        };
       }
 
-      let resultText = `Queue processing complete.\nProcessed: ${processedCount} URLs\nFailed: ${failedCount} URLs`;
-      if (failedUrls.length > 0) {
-        resultText += `\n\nFailed URLs:\n${failedUrls.join('\n')}`;
+      const currentUrl = urls[0]; // Get first URL
+      
+      try {
+        // Process the URL using the handler
+        await this.addDocHandler.handle({ url: currentUrl });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully processed URL: ${currentUrl}`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to process URL ${currentUrl}: ${error}`,
+            },
+          ],
+          isError: true,
+        };
       }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: resultText,
-          },
-        ],
-      };
     } catch (error) {
       return {
         content: [

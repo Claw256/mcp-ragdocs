@@ -36,35 +36,38 @@ export class RunQueueHandler extends BaseHandler {
         };
       }
 
+      // Read current queue
+      const content = await fs.readFile(QUEUE_FILE, 'utf-8');
+      const urls = content.split('\n').filter(url => url.trim() !== '');
+
+      if (urls.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Queue is empty',
+            },
+          ],
+        };
+      }
+
       let processedCount = 0;
       let failedCount = 0;
       const failedUrls: string[] = [];
 
-      while (true) {
-        // Read current queue
-        const content = await fs.readFile(QUEUE_FILE, 'utf-8');
-        const urls = content.split('\n').filter(url => url.trim() !== '');
-
-        if (urls.length === 0) {
-          break; // Queue is empty
-        }
-
-        const currentUrl = urls[0]; // Get first URL
-        
+      for (const url of urls) {
         try {
-          // Process the URL using add_documentation handler
-          await this.addDocHandler.handle({ url: currentUrl });
+          await this.addDocHandler.handle({ url });
           processedCount++;
         } catch (error) {
           failedCount++;
-          failedUrls.push(currentUrl);
-          console.error(`Failed to process URL ${currentUrl}:`, error);
+          failedUrls.push(url);
+          console.error(`Failed to process URL ${url}:`, error);
         }
-
-        // Remove the processed URL from queue
-        const remainingUrls = urls.slice(1);
-        await fs.writeFile(QUEUE_FILE, remainingUrls.join('\n') + (remainingUrls.length > 0 ? '\n' : ''));
       }
+
+      // Remove all processed URLs from the queue file
+      await fs.writeFile(QUEUE_FILE, '');
 
       let resultText = `Queue processing complete.\nProcessed: ${processedCount} URLs\nFailed: ${failedCount} URLs`;
       if (failedUrls.length > 0) {

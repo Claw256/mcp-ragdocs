@@ -139,8 +139,6 @@ export class HandlerRegistry {
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      await this.apiClient.initCollection(COLLECTION_NAME);
-
       const handler = this.handlers.get(request.params.name);
       if (!handler) {
         throw new McpError(
@@ -155,5 +153,9 @@ export class HandlerRegistry {
         ...response
       };
     });
+  }
+
+  async initialize() {
+    await this.apiClient.initCollection(COLLECTION_NAME);
   }
 }

@@ -15,14 +15,12 @@ export class AddDocumentationHandler extends BaseHandler {
     try {
       const chunks = await this.fetchAndProcessUrl(args.url);
       
-      // Batch process chunks for better performance
-      const batchSize = 100;
-      for (let i = 0; i < chunks.length; i += batchSize) {
-        const batch = chunks.slice(i, i + batchSize);
-        const points = await Promise.all(
-          batch.map(async (chunk) => {
+      // Process only the first chunk
+      if (chunks.length > 0) {
+        const chunk = chunks[0];
+          try {
             const embedding = await this.apiClient.getEmbeddings(chunk.text);
-            return {
+            const point = {
               id: this.generatePointId(),
               vector: embedding,
               payload: {
@@ -30,37 +28,52 @@ export class AddDocumentationHandler extends BaseHandler {
                 _type: 'DocumentChunk' as const,
               } as Record<string, unknown>,
             };
-          })
-        );
-
-        try {
-          await this.apiClient.qdrantClient.upsert(COLLECTION_NAME, {
-            wait: true,
-            points,
-          });
-        } catch (error) {
-          if (error instanceof Error) {
-            if (error.message.includes('unauthorized')) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                'Failed to authenticate with Qdrant cloud while adding documents'
-              );
-            } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT')) {
-              throw new McpError(
-                ErrorCode.InternalError,
-                'Connection to Qdrant cloud failed while adding documents'
-              );
+            
+            try {
+              await this.apiClient.qdrantClient.upsert(COLLECTION_NAME, {
+                wait: true,
+                points: [point],
+              });
+            } catch (upsertError) {
+              console.error('Qdrant upsert error:', upsertError);
+              if (upsertError instanceof Error) {
+                if (upsertError.message.includes('unauthorized')) {
+                  throw new McpError(
+                    ErrorCode.InvalidRequest,
+                    'Failed to authenticate with Qdrant cloud while adding documents'
+                  );
+                } else if (upsertError.message.includes('ECONNREFUSED') || upsertError.message.includes('ETIMEDOUT')) {
+                  throw new McpError(
+                    ErrorCode.InternalError,
+                    'Connection to Qdrant cloud failed while adding documents'
+                  );
+                }
+              }
+              throw upsertError;
             }
+          } catch (error) {
+            if (error instanceof Error) {
+              if (error.message.includes('unauthorized')) {
+                throw new McpError(
+                  ErrorCode.InvalidRequest,
+                  'Failed to authenticate with Qdrant cloud while adding documents'
+                );
+              } else if (error.message.includes('ECONNREFUSED') || error.message.includes('ETIMEDOUT')) {
+                throw new McpError(
+                  ErrorCode.InternalError,
+                  'Connection to Qdrant cloud failed while adding documents'
+                );
+              }
+            }
+            throw error;
           }
-          throw error;
-        }
       }
 
       return {
         content: [
           {
             type: 'text',
-            text: `Successfully added documentation from ${args.url} (${chunks.length} chunks processed in ${Math.ceil(chunks.length / batchSize)} batches)`,
+            text: `Successfully added documentation from ${args.url} (1 chunk processed)`,
           },
         ],
       };
@@ -85,7 +98,7 @@ export class AddDocumentationHandler extends BaseHandler {
     const page = await this.apiClient.browser.newPage();
     
     try {
-      await page.goto(url, { waitUntil: 'networkidle' });
+      await page.goto(url, { waitUntil: 'load', timeout: 60000 });
       const content = await page.content();
       const $ = cheerio.load(content);
       
@@ -99,7 +112,7 @@ export class AddDocumentationHandler extends BaseHandler {
       const mainContent = $('main, article, .content, .documentation, body').text();
       
       // Split content into chunks
-      const chunks = this.chunkText(mainContent, 1000);
+      const chunks = this.chunkText(mainContent, 500);
       
       return chunks.map(chunk => ({
         text: chunk,

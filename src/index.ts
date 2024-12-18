@@ -41,6 +41,7 @@ class RagDocsServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
+    await this.handlerRegistry.initialize();
     console.error('RAG Docs MCP server running on stdio');
   }
 }
